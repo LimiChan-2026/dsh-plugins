@@ -1,0 +1,20 @@
+# dsh-model-fold bundle patch.
+#
+# This is the `dsh.bundle.patch` layer of the package: when the plugin is
+# installed through the official CLI —
+#
+#   dsh plugin --profile desktop add ./dsh-model-fold
+#
+# — the command reconciles `dsh.profile.bundles` against installed packages and,
+# seeing this declaration, appends `dsh-model-fold` to the bundle stack. The
+# profile boot then merges THIS patch (a single `insert` of the plugin row).
+#
+# A profile that mounts the plugin by absolute path instead (the manual route
+# documented in README.md) must NOT also add it to `dsh.profile.bundles`, or the
+# row is mounted twice and the second registration throws on the model seat.
+#
+# `id` is the loader row's label; `name` must be the FULL package specifier
+# exactly as installed in the profile's node_modules.
+- insert:
+    - id: model-fold
+      name: "dsh-model-fold"

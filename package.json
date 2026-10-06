@@ -1,0 +1,23 @@
+{
+  "name": "dsh-plugins",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Plugins for DeepSeek Harness (DSH).",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LimiChan-2026/dsh-plugins.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node packages/dsh-model-fold/test/run-tests.mjs packages/dsh-model-fold/client.js"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}

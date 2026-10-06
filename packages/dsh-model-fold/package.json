@@ -1,0 +1,49 @@
+{
+  "name": "dsh-model-fold",
+  "version": "1.0.0",
+  "description": "Collapsible provider groups for the DeepSeek Harness composer model picker: every provider is folded to a single header row and expands only when its name is clicked.",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/LimiChan-2026/dsh-plugins/tree/main/packages/dsh-model-fold",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LimiChan-2026/dsh-plugins.git",
+    "directory": "packages/dsh-model-fold"
+  },
+  "bugs": {
+    "url": "https://github.com/LimiChan-2026/dsh-plugins/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "model-selection",
+    "ui"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-model-selection"
+      ]
+    }
+  }
+}
