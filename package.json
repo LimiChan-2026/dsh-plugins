@@ -13,7 +13,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node packages/dsh-model-fold/test/run-tests.mjs packages/dsh-model-fold/client.js"
+    "test": "node packages/dsh-model-fold/test/run-tests.mjs packages/dsh-model-fold/client.js && node packages/dsh-task-notify/test/run-tests.mjs"
   },
   "devDependencies": {
     "jsdom": "^25.0.1",

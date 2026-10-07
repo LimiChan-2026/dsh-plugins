@@ -1,0 +1,55 @@
+{
+  "name": "dsh-task-notify",
+  "version": "1.0.0",
+  "private": true,
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "notification",
+    "sound",
+    "chime",
+    "turn",
+    "toast"
+  ],
+  "description": "回合完成提醒：一声轻提示音、右下角完成卡片（点击回到该会话），可选 Windows 系统通知。",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "MIT",
+  "author": "LimiChan-2026",
+  "homepage": "https://github.com/LimiChan-2026/dsh-plugins/tree/main/packages/dsh-task-notify",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LimiChan-2026/dsh-plugins.git",
+    "directory": "packages/dsh-task-notify"
+  },
+  "bugs": {
+    "url": "https://github.com/LimiChan-2026/dsh-plugins/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-connection"
+      ]
+    }
+  }
+}

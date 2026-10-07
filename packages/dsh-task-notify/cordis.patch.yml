@@ -1,0 +1,18 @@
+# dsh-task-notify bundle patch.
+#
+# Two ways to compose this plugin into a profile:
+#
+# 1. Add "dsh-task-notify" to the profile package.json's dsh.profile.bundles
+#    list (this file is then resolved through the dsh.bundle.patch manifest).
+# 2. Or paste the insert block below into the profile's cordis.patch.yml.
+#
+# `name` must be the FULL package specifier exactly as installed in the
+# profile's node_modules, quoted (an unquoted scalar starting with `@` would
+# parse as a YAML indicator).
+#
+# The row id is also the Loader label, and `package.json`'s exports["./client"]
+# plus `dsh.client` are what make the browser half discoverable at
+# `/plugins/dsh-task-notify/client.js`.
+- insert:
+    - id: task-notify
+      name: "dsh-task-notify"

@@ -8,6 +8,7 @@ Plugins for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 
 | --- | --- |
 | [`dsh-model-fold`](packages/dsh-model-fold) | 把模型选择器按供应商折叠起来 —— 每个供应商只占一行，点名称才展开它的模型。 |
 | [`dsh-commandcode-quota`](packages/dsh-commandcode-quota) | Command Code 套餐额度面板（[上游](https://github.com/Jovan1666/commandcode-usage)的**最小化 UI 改进版**）—— 默认折叠成小芯片，点击展开。 |
+| [`dsh-task-notify`](packages/dsh-task-notify) | 回合完成提醒 —— 一声轻提示音 + 右下角完成卡片（点击回到该会话）+ 可选 Windows 系统通知。 |
 
 ## Install
 
@@ -20,6 +21,9 @@ dsh plugin --profile desktop add github:LimiChan-2026/dsh-plugins#path:/packages
 
 # Command Code 额度面板（最小化 UI 版）
 dsh plugin --profile desktop add github:LimiChan-2026/dsh-plugins#path:/packages/dsh-commandcode-quota
+
+# 回合完成提醒（提示音 + 右下角卡片 + 系统通知）
+dsh plugin --profile desktop add github:LimiChan-2026/dsh-plugins#path:/packages/dsh-task-notify
 ```
 
 Swap `desktop` for another profile name (`web`, …) if you are not using the
