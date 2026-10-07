@@ -1,0 +1,79 @@
+{
+  "name": "dsh-commandcode-quota",
+  "version": "0.1.0",
+  "private": true,
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "commandcode",
+    "command-code",
+    "quota",
+    "usage",
+    "credits",
+    "sidebar",
+    "llm"
+  ],
+  "description": "Command Code 套餐额度面板：侧栏显示月度 / 5 小时 / 每周额度窗口与重置倒计时，默认折叠成一个小芯片，点击展开（本版为最小化 UI 改进版）。",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./catalog": "./catalog.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "quota.mjs",
+    "catalog.mjs",
+    "catalog.seed.json",
+    "cli",
+    "cordis.patch.yml",
+    "LICENSE",
+    "README.md",
+    "README.zh-CN.md",
+    "README-FORK.md",
+    "README-MODIFIED.md",
+    "docs"
+  ],
+  "license": "MIT",
+  "author": "Jovan1666 (original plugin)",
+  "contributors": [
+    "LimiChan-2026 (minimized-UI fork)"
+  ],
+  "homepage": "https://github.com/LimiChan-2026/dsh-plugins/tree/main/packages/dsh-commandcode-quota",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LimiChan-2026/dsh-plugins.git",
+    "directory": "packages/dsh-commandcode-quota"
+  },
+  "bugs": {
+    "url": "https://github.com/LimiChan-2026/dsh-plugins/issues"
+  },
+  "upstream": {
+    "repository": "https://github.com/Jovan1666/commandcode-usage",
+    "path": "/plugins/dsh",
+    "note": "This is a modified fork of the upstream plugin. Only client.js differs; see README-MODIFIED.md."
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-connection"
+      ]
+    }
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

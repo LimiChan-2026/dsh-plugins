@@ -6,7 +6,8 @@ Plugins for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 
 
 | Plugin | Description |
 | --- | --- |
-| [`dsh-model-fold`](packages/dsh-model-fold) | Collapsible provider groups in the composer model picker — every provider folds to one header row and expands when its name is clicked. |
+| [`dsh-model-fold`](packages/dsh-model-fold) | 把模型选择器按供应商折叠起来 —— 每个供应商只占一行，点名称才展开它的模型。 |
+| [`dsh-commandcode-quota`](packages/dsh-commandcode-quota) | Command Code 套餐额度面板（[上游](https://github.com/Jovan1666/commandcode-usage)的**最小化 UI 改进版**）—— 默认折叠成小芯片，点击展开。 |
 
 ## Install
 
@@ -14,7 +15,11 @@ Each plugin is a DSH profile bundle that declares its own `dsh.bundle.patch`, so
 one command installs and mounts it — no hand-editing of `cordis.patch.yml`.
 
 ```sh
+# 模型选择器折叠
 dsh plugin --profile desktop add github:LimiChan-2026/dsh-plugins#path:/packages/dsh-model-fold
+
+# Command Code 额度面板（最小化 UI 版）
+dsh plugin --profile desktop add github:LimiChan-2026/dsh-plugins#path:/packages/dsh-commandcode-quota
 ```
 
 Swap `desktop` for another profile name (`web`, …) if you are not using the
