@@ -1,7 +1,7 @@
 {
   "name": "dsh-model-fold",
   "version": "1.0.0",
-  "description": "Collapsible provider groups for the DeepSeek Harness composer model picker: every provider is folded to a single header row and expands only when its name is clicked.",
+  "description": "把模型选择器按供应商折叠起来——每个供应商只占一行，点名称才展开它的模型，不用再一长条滚到底。",
   "type": "module",
   "main": "./index.js",
   "exports": {
