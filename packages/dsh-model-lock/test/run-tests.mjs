@@ -392,7 +392,32 @@ async function main() {
   const longLockTimers = requestedDelays.filter((delay) => delay === 2 ** 31 - 1)
   check('the long lock armed a clamped timer instead', longLockTimers.length >= 1)
 
-  /* --- 13. the /model popup reads the same filtered view --------------------- */
+  /* --- 13. the official workbuddy probe control still works ------------------ */
+  // dsh-workbuddy-connect's probe control lives in `conversation.input.right` and
+  // receives the SAME directory object, then calls `directory.subscribe` and
+  // `directory.getSnapshot` detached from it (it hands both to
+  // useSyncExternalStore). Detached calls must therefore keep working: the facade
+  // may not depend on `this`.
+  const detachedSubscribe = directory.subscribe
+  const detachedSnapshot = directory.getSnapshot
+  check('subscribe survives being detached from the facade', typeof detachedSubscribe === 'function')
+  // The 30-day lock from the previous section is still in force; assert against
+  // that target rather than assuming the table is empty.
+  check(
+    'a detached getSnapshot returns the filtered view',
+    !detachedSnapshot().groups.find((g) => g.id === 'command').models.some((m) => m.id === 'gpt-6.1-sol'),
+  )
+  let detachedNotifications = 0
+  const stopDetached = detachedSubscribe(() => {
+    detachedNotifications += 1
+  })
+  hostLocks = []
+  await reread()
+  stopDetached()
+  check('a detached subscriber is notified', detachedNotifications > 0)
+  check('and the model returns once the lock is gone', detachedSnapshot().groups.some((g) => g.id === 'command'))
+
+  /* --- 14. the /model popup reads the same filtered view --------------------- */
   const popupDirectory = resolver.directoryFor('session-1')
   check('the popup resolves the identical facade', popupDirectory === directory)
   const loaded = await popupDirectory.load()
@@ -414,7 +439,7 @@ async function main() {
   reloadCb({ modelDirectories: resolver, effect: ctx.effect })
   check('the patch is re-applied after a service reload', resolver.directoryFor !== resolverPrototypeDirectoryFor)
 
-  /* --- 17. the card renders the host catalog and writes locks ---------------- */
+  /* --- 18. the card renders the host catalog and writes locks ---------------- */
   hostCatalog = [
     { provider: 'workbuddy-ai', name: 'WorkBuddy AI', models: [{ id: 'deepseek-v4.1-flash', name: 'Deepseek-V4.1-Flash' }] },
     { provider: 'command', name: 'command', models: [{ id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol' }] },
@@ -474,7 +499,7 @@ async function main() {
   check('unlocking posts locked:false', writes[writes.length - 1].locked === false)
   check('the row returns to the lock state', [...container.querySelectorAll('.dml_button')][0].textContent === DICT.lock)
 
-  /* --- 18. a failed write is surfaced, not swallowed ------------------------- */
+  /* --- 19. a failed write is surfaced, not swallowed ------------------------- */
   writeFails = true
   const failButton = [...container.querySelectorAll('.dml_button')][0]
   await act(async () => {
