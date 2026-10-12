@@ -225,14 +225,21 @@ async function readBody(req) {
  * failing the whole document, so one broken provider cannot hide the rest of
  * the card. This mirrors how the shipped catalog builder isolates failures.
  *
- * @param ctx - Host context carrying the live LLM registry.
+ * `llm` is read through `ctx.get` rather than as a service on the caller's own
+ * scope: this runs from the web-server scope, which does not declare `llm` in
+ * its inject list, and Cordis refuses an undeclared service read.
+ *
+ * @param ctx - Host context able to reach the LLM registry.
+ * @returns one entry per provider, in registration order.
  */
 async function describeCatalog(ctx) {
-  const providers = ctx.llm.listProviders()
+  const llm = ctx.get('llm')
+  if (llm === undefined) return []
+  const providers = llm.listProviders()
   const entries = await Promise.all(
     providers.map(async (provider) => {
       try {
-        const models = await ctx.llm.listModels(provider.id)
+        const models = await llm.listModels(provider.id)
         return {
           provider: provider.id,
           name: provider.name,
@@ -294,7 +301,7 @@ export function apply(ctx) {
             json(res, 200, {
               now,
               locks: store.active(now).map((lock) => toWire(lock, now)),
-              catalog: await describeCatalog(scope),
+              catalog: await describeCatalog(ctx),
             })
           } catch (error) {
             json(res, 500, { error: error instanceof Error ? error.message : String(error) })

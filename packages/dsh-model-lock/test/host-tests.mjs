@@ -42,33 +42,51 @@ const catalogs = {
 }
 let failingProvider = undefined
 
-const ctx = {
-  inject: (names, cb) => {
-    cb({
-      effect: (fn) => {
-        const dispose = fn()
-        const wrapped = typeof dispose === 'function' ? dispose : () => {}
-        effects.push(wrapped)
-        return wrapped
-      },
-      webServer: {
-        register: (route) => {
-          routes.set(route.path, route.handler)
-          return () => routes.delete(route.path)
-        },
-      },
-      llm: {
-        listProviders: () => providers,
-        listModels: async (provider) => {
-          if (provider === failingProvider) throw new Error('upstream exploded')
-          return catalogs[provider] ?? []
-        },
-      },
-    })
+const llm = {
+  listProviders: () => providers,
+  listModels: async (provider) => {
+    if (provider === failingProvider) throw new Error('upstream exploded')
+    return catalogs[provider] ?? []
   },
 }
 
+/**
+ * The injected scope mirrors Cordis: it carries ONLY the services named in the
+ * inject list, plus `effect`. A merged object here would hide the bug where a
+ * handler reads a service its own scope does not declare, which is exactly what
+ * a real profile did.
+ */
+const scope = {
+  effect: (fn) => {
+    const dispose = fn()
+    const wrapped = typeof dispose === 'function' ? dispose : () => {}
+    effects.push(wrapped)
+    return wrapped
+  },
+  webServer: {
+    register: (route) => {
+      routes.set(route.path, route.handler)
+      return () => routes.delete(route.path)
+    },
+  },
+}
+
+const ctx = {
+  inject: (names, cb) => {
+    for (const name of names) {
+      if (!(name in scope)) throw new Error(`test scope is missing injected service "${name}"`)
+    }
+    cb(scope)
+  },
+  // Cordis resolves a service by name from the context; `llm` is not on the
+  // web-server scope, so the plugin must reach it this way.
+  get: (name) => (name === 'llm' ? llm : undefined),
+}
+
 apply(ctx)
+
+// A scope that leaked llm as an own property would hide the real bug.
+check('the injected scope does not expose llm directly', scope.llm === undefined)
 
 check('both routes were registered', routes.has('/plugins/dsh-model-lock/state') && routes.has('/plugins/dsh-model-lock/lock'))
 
