@@ -255,6 +255,14 @@ window.__ModuleLoader__.load({
      */
     function facadeOf(real) {
       const state = { source: undefined, revision: -1, snapshot: undefined }
+      /**
+       * Subscribers of this filtered view.
+       *
+       * Kept separately from the real store's own subscriber list because a
+       * table change is invisible to the real store: it publishes nothing, so
+       * only this set can be told to re-read.
+       */
+      const facadeListeners = new Set()
 
       /** Drop locked models, then groups left with nothing to offer. */
       function project(snapshot) {
@@ -281,9 +289,24 @@ window.__ModuleLoader__.load({
       }
 
       const facade = {
-        /** Invalidate the memoized snapshot after a table change. */
+        /**
+         * Re-publish after a table change.
+         *
+         * Resetting the memo is not enough: the composer seat subscribes to
+         * `facade.store`, and `useSyncExternalStore` only re-reads when its own
+         * subscription fires. Without notifying them, an open menu would keep
+         * showing a model that was just locked until something else re-rendered
+         * it.
+         */
         invalidate() {
           state.revision = -1
+          for (const listener of facadeListeners) {
+            try {
+              listener()
+            } catch (error) {
+              console.error('[dsh-model-lock] directory subscriber failed:', error)
+            }
+          }
         },
         getSnapshot() {
           const source = real.store.getSnapshot()
@@ -294,7 +317,14 @@ window.__ModuleLoader__.load({
           return state.snapshot
         },
         subscribe(listener) {
-          return real.store.subscribe(listener)
+          // Follow the real store as well, so a Host-side catalog refresh still
+          // repaints the menu.
+          const unsubscribeReal = real.store.subscribe(listener)
+          facadeListeners.add(listener)
+          return () => {
+            facadeListeners.delete(listener)
+            unsubscribeReal()
+          }
         },
         async load() {
           const snapshot = await real.load()
@@ -310,6 +340,15 @@ window.__ModuleLoader__.load({
         resetConnected() {
           return real.resetConnected()
         },
+      }
+
+      // The composer seat does not call these directly: it is handed
+      // `directory.store` and subscribes to THAT. So the filtered view has to be
+      // published as a store-shaped object too, and its subscription must go
+      // through the facade so a table change reaches the seat.
+      facade.store = {
+        getSnapshot: () => facade.getSnapshot(),
+        subscribe: (listener) => facade.subscribe(listener),
       }
 
       // `directory`/`failures`/`current` are read off the snapshot by the

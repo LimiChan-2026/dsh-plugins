@@ -331,7 +331,40 @@ async function main() {
   check('a failed refresh keeps the previous table', !held.groups.some((g) => g.id === 'shuai'))
   stateFails = false
 
-  /* --- 10. a temporary lock lifts on its own, with no card open -------------- */
+  /* --- 10. the composer seat consumes `directory.store`, not the facade ------ */
+  // The shipped seat registration hands the component `directory.store` and the
+  // component subscribes to that object. A facade that published its filtered
+  // view only through its own getSnapshot() would leave the seat reading the raw
+  // snapshot, so locked models would stay visible in the composer.
+  hostLocks = [{ provider: 'shuai', model: 'glm-5.3', untilMs: null, lockedAtMs: Date.now() }]
+  await reread()
+  const seatStore = directory.store
+  check('the facade publishes a store-shaped object', seatStore !== undefined && typeof seatStore.getSnapshot === 'function')
+  check('that store is not the raw store', seatStore !== store)
+  check(
+    'the seat store hides the locked model',
+    !seatStore.getSnapshot().groups.some((g) => g.id === 'shuai'),
+  )
+  check('the seat store keeps the other providers', seatStore.getSnapshot().groups.length === 2)
+  check('the raw store still holds every model', store.getSnapshot().groups.length === 3)
+
+  // A subscriber attached the way the component attaches one must be notified
+  // when the table changes, or the open menu would never repaint.
+  let seatNotifications = 0
+  const unsubscribeSeat = seatStore.subscribe(() => {
+    seatNotifications += 1
+  })
+  hostLocks = []
+  await reread()
+  unsubscribeSeat()
+  check('the seat store notifies its subscribers on a table change', seatNotifications > 0)
+  check('the seat store shows the model again once unlocked', seatStore.getSnapshot().groups.some((g) => g.id === 'shuai'))
+
+  // `useSyncExternalStore` calls getSnapshot repeatedly and re-renders forever on
+  // a fresh identity, so the store must be as stable as the facade.
+  check('the seat store snapshot is identity-stable', seatStore.getSnapshot() === seatStore.getSnapshot())
+
+  /* --- 11. a temporary lock lifts on its own, with no card open -------------- */
   hostLocks = [{ provider: 'shuai', model: 'glm-5.3', untilMs: Date.now() + 300, lockedAtMs: Date.now() }]
   await reread()
   check('a lock with a near deadline hides its model', !directory.getSnapshot().groups.some((g) => g.id === 'shuai'))
@@ -341,7 +374,7 @@ async function main() {
     directory.getSnapshot().groups.some((g) => g.id === 'shuai'),
   )
 
-  /* --- 11. a long lock does not overflow its timer and unlock at once -------- */
+  /* --- 12. a long lock does not overflow its timer and unlock at once -------- */
   // `setTimeout` stores its delay in 32 bits: a delay above 2^31-1 fires almost
   // immediately. A 30-day lock must therefore still be in force a moment later.
   hostLocks = [{ provider: 'command', model: 'gpt-6.1-sol', untilMs: Date.now() + 30 * 24 * 60 * 60 * 1000, lockedAtMs: Date.now() }]
@@ -359,7 +392,7 @@ async function main() {
   const longLockTimers = requestedDelays.filter((delay) => delay === 2 ** 31 - 1)
   check('the long lock armed a clamped timer instead', longLockTimers.length >= 1)
 
-  /* --- 12. the /model popup reads the same filtered view --------------------- */
+  /* --- 13. the /model popup reads the same filtered view --------------------- */
   const popupDirectory = resolver.directoryFor('session-1')
   check('the popup resolves the identical facade', popupDirectory === directory)
   const loaded = await popupDirectory.load()
@@ -381,7 +414,7 @@ async function main() {
   reloadCb({ modelDirectories: resolver, effect: ctx.effect })
   check('the patch is re-applied after a service reload', resolver.directoryFor !== resolverPrototypeDirectoryFor)
 
-  /* --- 16. the card renders the host catalog and writes locks ---------------- */
+  /* --- 17. the card renders the host catalog and writes locks ---------------- */
   hostCatalog = [
     { provider: 'workbuddy-ai', name: 'WorkBuddy AI', models: [{ id: 'deepseek-v4.1-flash', name: 'Deepseek-V4.1-Flash' }] },
     { provider: 'command', name: 'command', models: [{ id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol' }] },
@@ -441,7 +474,7 @@ async function main() {
   check('unlocking posts locked:false', writes[writes.length - 1].locked === false)
   check('the row returns to the lock state', [...container.querySelectorAll('.dml_button')][0].textContent === DICT.lock)
 
-  /* --- 17. a failed write is surfaced, not swallowed ------------------------- */
+  /* --- 18. a failed write is surfaced, not swallowed ------------------------- */
   writeFails = true
   const failButton = [...container.querySelectorAll('.dml_button')][0]
   await act(async () => {
