@@ -13,7 +13,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node packages/dsh-model-fold/test/run-tests.mjs packages/dsh-model-fold/client.js && node packages/dsh-task-notify/test/run-tests.mjs"
+    "test": "node packages/dsh-model-fold/test/run-tests.mjs packages/dsh-model-fold/client.js && node packages/dsh-task-notify/test/run-tests.mjs && npm run test:model-lock",
+    "test:model-lock": "node packages/dsh-model-lock/test/run-tests.mjs packages/dsh-model-lock/client.js && node packages/dsh-model-lock/test/host-tests.mjs packages/dsh-model-lock/index.js"
   },
   "devDependencies": {
     "jsdom": "^25.0.1",
