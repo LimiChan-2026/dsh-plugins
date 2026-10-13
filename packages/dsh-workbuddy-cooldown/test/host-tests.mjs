@@ -1,55 +1,54 @@
 /**
- * dsh-workbuddy-cooldown host-half integration tests.
+ * dsh-workbuddy-cooldown host-half tests.
  *
- * Runs the REAL `index.js` against a real HTTP server acting as the wb2api
- * panel, so the things that can only break in the host half are covered: panel
- * shape normalization (including Go's zero time), the cache window, error
- * propagation, and the route contract.
+ * Exercises the REAL `index.js` aggregation over a REAL log directory. The
+ * recorder that produces the log is not stubbed away: it is extracted verbatim
+ * from the patched workbuddy plugin, so the tests cover the actual producer and
+ * the actual consumer against each other.
  *
- * The panel is faked here because its 429 path cannot be exercised on demand:
- * `model_locks` was empty on this machine for the whole build, so a fake lets
- * the aggregation actually be asserted rather than hoped for.
- *
- * Run: node host-tests.mjs <path-to-index.js>
+ * Run: node host-tests.mjs <patched-host-heartbeat.js> <index.js>
  */
-import { mkdtempSync, rmSync } from 'node:fs'
+import { readFileSync, writeFileSync, rmSync, mkdtempSync, appendFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createServer } from 'node:http'
 import { pathToFileURL } from 'node:url'
 
-const indexPath = process.argv[2]
+const pluginSrcPath = process.argv[2]
+const indexPath = process.argv[3]
+
 const results = []
 const check = (name, ok, detail) => results.push({ name, ok: Boolean(ok), detail })
 
 const home = mkdtempSync(join(tmpdir(), 'wbc-home-'))
+process.env.DSH_HOME = home
 
-const { apply, STATUS_PATH } = await import(pathToFileURL(indexPath).href)
+/* --- load the recorder from the patched plugin -------------------------------- */
+const pluginSrc = readFileSync(pluginSrcPath, 'utf8')
+const pStart = pluginSrc.indexOf('const RATE_LIMIT_LOG_BASENAME')
+const pEnd = pluginSrc.indexOf('function classifyUpstreamError')
+if (pStart < 0 || pEnd < 0) throw new Error('recorder block not found in the patched plugin')
+const recorderHarness =
+  'import { appendFileSync, mkdirSync } from "node:fs"\n' +
+  'import { dirname, join } from "node:path"\n' +
+  'const resolveDshHome = () => process.env.DSH_HOME\n' +
+  pluginSrc.slice(pStart, pEnd) + '\n' +
+  'export { recordRateLimit }\n'
+const recorderPath = join(home, 'recorder.mjs')
+writeFileSync(recorderPath, recorderHarness, 'utf8')
+const { recordRateLimit: record } = await import(pathToFileURL(recorderPath).href)
 
-/* --- a stand-in wb2api panel ------------------------------------------------- */
-/** The panel document the fake serves; tests mutate it between assertions. */
-let panelDocument = {}
-/** Set to make the panel answer with a non-200 status. */
-let panelStatus = 200
-/** Set to make the panel hang until the client times out. */
-let panelHangs = false
-/** Every panel request the plugin made. */
-const panelRequests = []
+/* --- load the aggregator ------------------------------------------------------- */
+const { apply, STATUS_PATH, parseResetTime, REALM_TO_PROVIDER } = await import(pathToFileURL(indexPath).href)
 
-const panelServer = createServer((req, res) => {
-  panelRequests.push(req.url)
-  if (panelHangs) {
-    // Never answer; the plugin's own timeout must recover.
-    return
-  }
-  const payload = JSON.stringify(panelDocument)
-  res.writeHead(panelStatus, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) })
-  res.end(payload)
-})
-await new Promise((resolve) => panelServer.listen(0, '127.0.0.1', resolve))
-const panelBase = `http://127.0.0.1:${panelServer.address().port}`
+const resetText = (iso) => `该模型使用量已达上限，将在 ${iso} UTC+8 重置`
+// The upstream states its reset as a UTC+8 WALL CLOCK. To produce one that
+// means "h hours from now", take the future instant and render it in the +08:00
+// zone - i.e. add 8h to the UTC rendering. Getting this wrong makes every
+// parsed deadline land 6-8h in the past, which is precisely the class of bug
+// the bogus-reset fallback exists to catch.
+const hoursFromNow = (h) => new Date(Date.now() + (h + 8) * 3600e3).toISOString().slice(0, 19) + '.108'
 
-/* --- harness context --------------------------------------------------------- */
+/* --- routes --------------------------------------------------------------------- */
 const routes = new Map()
 const effects = []
 const scope = {
@@ -66,165 +65,104 @@ const scope = {
     },
   },
 }
-const ctx = {
-  inject: (names, cb) => {
-    for (const name of names) if (!(name in scope)) throw new Error(`scope is missing "${name}"`)
-    cb(scope)
-  },
-}
+apply({ inject: (names, cb) => cb(scope) }, { stateTtlMs: 0 })
 
-let pluginConfig = { panelApiKey: 'test-key', panelBaseUrl: panelBase, panelTtlMs: 0 }
-const reapply = () => apply(ctx, pluginConfig)
-reapply()
-
-check('the state route was registered', routes.has(STATUS_PATH))
-
-/* --- panel fixtures ---------------------------------------------------------- */
-const ZERO = '0001-01-01T00:00:00Z'
-const account = (over = {}) => ({
-  uid: 'uid-cn-1',
-  nickname: 'acc-cn-1',
-  credits: 500,
-  realm: 'cn',
-  cooling: false,
-  disabled: false,
-  until: ZERO,
-  cool_kind: 0,
-  breaker_until: ZERO,
-  degrade_until: ZERO,
-  last_err: '',
-  ...over,
-})
-const FUTURE = Date.now() + 60 * 60 * 1000
-
-/** Call the plugin's own state route as the browser would. */
-async function callState(origin = 'http://127.0.0.1:19387') {
+async function callState() {
   const res = {
-    statusCode: 0,
-    headers: {},
-    body: '',
-    writeHead(code, headers) {
-      this.statusCode = code
-      Object.assign(this.headers, headers)
-    },
-    end(payload) {
-      this.body = payload
-    },
+    statusCode: 0, headers: {}, body: '',
+    writeHead(c, hh) { this.statusCode = c; Object.assign(this.headers, hh) },
+    end(p) { this.body = p },
   }
-  await routes.get(STATUS_PATH)({ method: 'GET', headers: { host: '127.0.0.1', origin } }, res)
+  await routes.get(STATUS_PATH)({ method: 'GET', headers: { host: '127.0.0.1', origin: 'http://127.0.0.1:19387' } }, res)
   return { status: res.statusCode, body: JSON.parse(res.body) }
 }
 
 async function main() {
-  /* --- 1. a healthy pool ----------------------------------------------------- */
-  panelDocument = {
-    total: 2,
-    healthy: 2,
-    cooling: 0,
-    accounts: [account(), account({ uid: 'uid-gl-1', nickname: 'acc-gl-1', realm: 'global' })],
-    model_locks: [],
-  }
-  reapply()
-  const healthy = await callState()
-  check('the plugin asks the panel for /status', panelRequests.some((u) => u.includes('/status')))
-  check('the state route answers 200', healthy.status === 200, `got ${healthy.status}`)
-  check('a healthy pool reports no model locks', healthy.body.modelLocks.length === 0)
-  check('both accounts are carried', healthy.body.accounts.length === 2)
-  check('the panel reachability flag is true', healthy.body.reachable === true)
-  check('the panel account count is surfaced', healthy.body.panelTotal === 2)
+  /* --- 1. reset-time parsing ------------------------------------------------ */
+  const withMs = parseResetTime(resetText('2026-10-14 02:00:00.108'))
+  const withoutMs = parseResetTime(resetText('2026-10-14 02:00:00'))
+  check('a reset time with milliseconds parses', typeof withMs === 'number' && Number.isFinite(withMs))
+  check('it lands on 18:00:00.108Z (02:00:00.108 UTC+8)', Math.abs(withMs - Date.parse('2026-10-13T18:00:00.108Z')) < 1000)
+  check('a reset time without milliseconds parses', typeof withoutMs === 'number')
+  check('the two agree to the second', Math.abs((withMs ?? 0) - (withoutMs ?? 0) - 108) < 1000)
+  check('a plain soft-limit message has no reset time', parseResetTime('请求过于频繁，请稍后重试。') === undefined)
+  check('an empty body has no reset time', parseResetTime('') === undefined)
 
-  /* --- 2. Go zero time is absence, not a past date --------------------------- */
-  check(
-    'a zero "until" is not reported as a cooldown',
-    healthy.body.accounts.every((a) => a.untilMs === null),
-  )
+  /* --- 2. an empty pool is empty, not an error ------------------------------ */
+  const empty = await callState()
+  check('with no 429s the view is empty and healthy', empty.status === 200 && empty.body.modelLocks.length === 0 && empty.body.coolingModels === 0)
 
-  /* --- 3. a model-level lock is carried through ------------------------------ */
-  panelDocument = {
-    total: 2,
-    healthy: 0,
-    cooling: 2,
-    accounts: [
-      account({ cooling: true, until: new Date(FUTURE).toISOString(), cool_kind: 6004 }),
-      account({ uid: 'uid-cn-2', nickname: 'acc-cn-2', cooling: true, until: new Date(FUTURE + 30 * 60_000).toISOString(), cool_kind: 6004 }),
-    ],
-    model_locks: [
-      {
-        realm: 'cn',
-        model: 'deepseek-v4.1-flash',
-        available: 0,
-        total: 2,
-        locked_accounts: 2,
-        state: 'cooling',
-        earliest_unlock: new Date(FUTURE).toISOString(),
-        full_pool_unlock: new Date(FUTURE + 30 * 60_000).toISOString(),
-        reason: '将在 … 重置',
-      },
-    ],
-  }
-  reapply()
+  /* --- 3. a model-level 429 records and surfaces the wall clock ------------- */
+  const reset = hoursFromNow(2)
+  record('global', 'deepseek-v4.1-flash', 429, JSON.stringify({ code: 6004, message: resetText(reset) }))
   const locked = await callState()
-  check('a populated model_locks reaches the client', locked.body.modelLocks.length === 1)
+  check('a 6004 429 surfaces as a model lock', locked.body.modelLocks.length === 1)
   const lock = locked.body.modelLocks[0]
-  check('the model id survives', lock.model === 'deepseek-v4.1-flash')
-  check('the realm survives', lock.realm === 'cn')
-  check('locked account count is carried', lock.lockedAccounts === 2)
-  check('earliest unlock parses to a future time', lock.earliestUnlockMs > Date.now())
-  check('full pool unlock parses to a later time', lock.fullPoolUnlockMs > lock.earliestUnlockMs)
+  check('it maps to the workbuddy-ai provider', lock.provider === 'workbuddy-ai')
+  check('it is flagged model-level', lock.modelLevel === true)
+  check('its deadline is the upstream wall clock', typeof lock.untilMs === 'number' && Math.abs(lock.untilMs - Date.parse(reset.replace(' ', 'T') + '+08:00')) < 1000)
+  check('remaining time is positive and under the 2h window', lock.remainingMs > 0 && lock.remainingMs <= 2 * 3600e3 + 5000)
   check('the upstream reason text is carried', lock.reason.includes('重置'))
-  check('the raw panel entry is preserved for unknown fields', typeof lock.raw === 'object')
 
-  /* --- 4. unknown lock fields are not dropped -------------------------------- */
-  panelDocument.model_locks = [{ realm: 'cn', model: 'm1', someFutureField: 'x' }]
-  reapply()
-  const unknown = await callState()
-  check('an unrecognized lock shape is still reported', unknown.body.modelLocks.length === 1)
-  check('with its raw panel entry intact', unknown.body.modelLocks[0].raw.someFutureField === 'x')
-
-  /* --- 5. accounts cooling without a model lock are visible ------------------ */
-  const cooling = await callState()
-  check('cooling accounts are counted', cooling.body.coolingAccounts === 2)
+  /* --- 4. realm isolation ---------------------------------------------------- */
+  record('cn', 'deepseek-v4.1-flash', 429, JSON.stringify({ code: 6004, message: resetText(reset) }))
+  const both = await callState()
+  check('a cn lock for the same id is a separate entry', both.body.modelLocks.length === 2)
   check(
-    'each cooling account carries its own deadline',
-    cooling.body.accounts.every((a) => a.untilMs === null || a.untilMs > Date.now()),
+    'each maps to its own provider',
+    both.body.modelLocks.every((l) => REALM_TO_PROVIDER[l.realm] === l.provider),
   )
 
-  /* --- 6. a disabled account is not counted as cooling ----------------------- */
-  panelDocument.accounts = [account({ cooling: true, disabled: true })]
-  reapply()
-  const disabled = await callState()
-  check('a disabled account is not counted as cooling', disabled.body.coolingAccounts === 0)
+  /* --- 5. a soft 429 gets the base window ----------------------------------- */
+  record('cn', 'glm-5.3', 429, '请求过于频繁，请稍后重试。')
+  const soft = await callState()
+  const softLock = soft.body.modelLocks.find((l) => l.model === 'glm-5.3')
+  check('a soft 429 surfaces as a lock', softLock !== undefined)
+  check('it is not model-level', softLock.modelLevel === false)
+  check('its window is near the 600s base', softLock.remainingMs > 540e3 && softLock.remainingMs <= 600e3 + 5000)
 
-  /* --- 7. a panel failure is a reported error, not silence ------------------- */
-  // The panel is switched to a failing status in place rather than closed: a
-  // closed loopback socket can leave the node fetch agent waiting on a pooled
-  // connection, which hangs the test instead of exercising the timeout.
-  panelStatus = 503
-  const down = await callState()
-  check('a failing panel answers 502', down.status === 502, `got ${down.status}`)
-  check('with reachability flagged false', down.body.reachable === false)
-  check('and a diagnostic message', typeof down.body.error === 'string' && down.body.error.length > 0)
+  /* --- 6. backoff on consecutive soft 429s ---------------------------------- */
+  record('cn', 'glm-5.3', 429, '请求过于频繁，请稍后重试。')
+  // The recorder collapses same-instant duplicates within its 5s window, so the
+  // second hit must be a genuinely later one - the way a real retry is.
+  await new Promise((resolve) => setTimeout(resolve, 5100))
+  record('cn', 'glm-5.3', 429, '请求过于频繁，请稍后重试。')
+  const backoff = await callState()
+  const backoffLock = backoff.body.modelLocks.find((l) => l.model === 'glm-5.3')
+  check('a second consecutive 429 doubles the window', backoffLock.hits === 2 && backoffLock.remainingMs > 1000e3, `hits=${backoffLock.hits} remaining=${backoffLock.remainingMs}`)
 
-  /* --- 8. the panel recovers and the view follows ---------------------------- */
-  panelStatus = 200
-  panelDocument = {
-    total: 1,
-    healthy: 1,
-    cooling: 0,
-    accounts: [account()],
-    model_locks: [],
-  }
-  reapply()
-  const recovered = await callState()
-  check('a recovered pool is reported healthy again', recovered.status === 200 && recovered.body.reachable === true)
-  check('and carries no locks', recovered.body.modelLocks.length === 0)
+  /* --- 7. a success clears a soft cooldown but not a model-level one -------- */
+  record('cn', 'glm-5.3', 200, '')
+  const cleared = await callState()
+  check('a success clears the soft cooldown', !cleared.body.modelLocks.some((l) => l.model === 'glm-5.3'))
+  check('a success does NOT clear the model-level lock', cleared.body.modelLocks.some((l) => l.model === 'deepseek-v4.1-flash' && l.realm === 'global'))
 
-  /* --- 9. disposal removes the route --------------------------------------- */
+  /* --- 8. a success on the model-level model also clears it ----------------- */
+  record('global', 'deepseek-v4.1-flash', 200, '')
+  record('cn', 'deepseek-v4.1-flash', 200, '')
+  const allClear = await callState()
+  check('a success on the locked model itself clears it', allClear.body.modelLocks.length === 0)
+
+  /* --- 9. non-429 statuses are ignored -------------------------------------- */
+  record('cn', 'kimi-k3', 500, 'server error')
+  record('cn', 'kimi-k3', 402, 'insufficient credit')
+  const ignored = await callState()
+  check('a 500 and a 402 never become cooldowns', !ignored.body.modelLocks.some((l) => l.model === 'kimi-k3'))
+
+  /* --- 10. old entries age out ---------------------------------------------- */
+  const stale = { time: Date.now() - 25 * 3600e3, realm: 'cn', model: 'stale-model', status: 429, body: '' }
+  appendFileSync(join(home, '.workbuddy-429-log.jsonl'), `${JSON.stringify(stale)}\n`, 'utf8')
+  const aged = await callState()
+  check('an entry older than the memory window is not surfaced', !aged.body.modelLocks.some((l) => l.model === 'stale-model'))
+
+  /* --- 11. a torn trailing line does not break the read --------------------- */
+  appendFileSync(join(home, '.workbuddy-429-log.jsonl'), '{"time":123,"realm":"cn","mo', 'utf8')
+  const torn = await callState()
+  check('a torn trailing line is skipped, the view still builds', torn.status === 200)
+
+  /* --- 12. disposal removes the route --------------------------------------- */
   for (const dispose of effects.reverse()) dispose()
   check('disposing unregisters the route', routes.size === 0)
-
-  rmSync(home, { recursive: true, force: true })
-  panelServer.close()
 
   const failed = results.filter((r) => !r.ok)
   for (const r of failed) console.log(`FAIL  ${r.name}${r.detail === undefined ? '' : ` - ${r.detail}`}`)
