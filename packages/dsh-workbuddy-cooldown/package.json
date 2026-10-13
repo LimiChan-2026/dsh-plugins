@@ -1,0 +1,51 @@
+{
+  "name": "dsh-workbuddy-cooldown",
+  "version": "1.0.0",
+  "description": "WorkBuddy 429 冷却监视——哪些模型被限流、冷却到几点恢复。",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/LimiChan-2026/dsh-plugins/tree/main/packages/dsh-workbuddy-cooldown",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LimiChan-2026/dsh-plugins.git",
+    "directory": "packages/dsh-workbuddy-cooldown"
+  },
+  "bugs": {
+    "url": "https://github.com/LimiChan-2026/dsh-plugins/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "workbuddy",
+    "rate-limit",
+    "cooldown",
+    "ui"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-model-selection"
+      ]
+    }
+  }
+}
